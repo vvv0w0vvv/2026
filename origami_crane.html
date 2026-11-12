@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
-<title>ORIGAMI -鶴-</title>
+<title>ORIGAMI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- 紙の上の言葉：Shippori Mincho（https://fonts.google.com/specimen/Shippori+Mincho ）。案内の文字：Inter（https://fonts.google.com/specimen/Inter ） -->
@@ -894,7 +894,9 @@ function uToRaw(v){ let uu = 0, xx = 0;
   for (const [s0, e0, m] of STRETCH){ if (v <= s0) return (xx + (v - uu)) / SLEN; xx += s0 - uu; uu = s0; if (v <= e0) return (xx + (v - s0) * m) / SLEN; xx += (e0 - s0) * m; uu = e0; }
   return (xx + (v - uu)) / SLEN; }
 // ページ全体のスクロールの量：場面の進みをゆっくりにするため、もとの 1300svh の約2.3倍（3000svh）にする（仮の値）
-const JOURNEY_SVH = 4000; // 3000 → 4000（もっとゆっくりに。仮の値）
+// スクロールの長さの土台：PCは 4000svh。指で操作する画面（スマホ・タブレット）は、指でなぞって進む量が画面の高さに対して小さく遅く感じるので、半分にする（0.5 は仮の値）
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+const JOURNEY_SVH = 4000 * (TOUCH ? 0.5 : 1);
 journey.style.height = (JOURNEY_SVH * SLEN).toFixed(1) + 'svh';
 const total = () => Math.max(1, journey.offsetHeight - innerHeight);
 const toU = () => rawToU(clamp(-journey.getBoundingClientRect().top / total()));

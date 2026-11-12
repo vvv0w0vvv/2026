@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>一枚の紙から（試作）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- 紙の上の言葉：Shippori Mincho（https://fonts.google.com/specimen/Shippori+Mincho ）。案内の文字：Inter（https://fonts.google.com/specimen/Inter ） -->
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================================
+   折り紙の試作：平らな紙 → 三角に折る → 四角い形（正方基本形）→ 鶴の基本形 → 首・尾・頭 → 羽を広げる → 千羽鶴
+   ・四角い形までは、紙が伸び縮みしない条件のまま正確に動かす。鶴の基本形から先は、形を決めた途中の形をなめらかにつなぐ省略した動き
+   ・言葉：高野さんの3つの言葉と、千羽鶴の「あなたの鶴は◯羽目。」（数を受け取れたときだけ）
+   ・千羽鶴の数：ページを開くたびに Abacus（https://github.com/JasonLovesDoggo/abacus ）で1つ数える
+   ・見てもらうこと：紙の上の文字の入り方、和紙の質感、折る動き
+   ・鶴：羽を広げるのに合わせて、紅（べに）#CB1B45 に染まっていく（体 → 羽 → 首と尾 → 頭の順）
+   ・紙：和紙の模様は貼らず、光と影の明暗の層と折り目の線だけで、半透明の紙に見せる（Claudeで直接開いたときの見え方に合わせた）
+   ・（以前の）紙の色：紅（べに）#CB1B45（DIC 日本の伝統色の値。https://www.premium-j.jp/en/premiumcalendar/20260303_68755/ ）。裏は白
+   ・言葉はすべて仮（いただいた文章から短く切り出したもの。言い回しはあとで詰める）
+   ・動きの速さ・角度・大きさなどの数値は、出典のない仮の値
+   ========================================================================== */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:#F3EEE6;color:#2B2523;overscroll-behavior-y:none}
+.journey{position:relative;height:4000svh}
+.stage{position:sticky;top:0;height:100svh;overflow:hidden;background:radial-gradient(120% 90% at 50% 40%,#F8F4EE 0%,#EFE8DD 70%,#E6DDCF 100%)}
+#scene{position:absolute;inset:0;width:100%;height:100%;display:block}
+/* 余白の言葉（紙が小さく立体になったあとに出す） */
+.vapor{position:absolute;pointer-events:none;z-index:4;visibility:hidden;color:rgba(255,255,255,.7);text-shadow:0 0 10px rgba(243,238,230,.95),0 0 22px rgba(243,238,230,.7)} /* 紅の紙に重なっても読めるよう、和紙の色の淡いにじみ */
+/* PC：紙の右側に縦書き（1文字ずつ上から積む）。縦長のスマホ：紙の上に横書き（1行）。字の大きさは言葉の長さから layout() で決める */
+.vapor .ja{font-family:"Shippori Mincho",serif;font-weight:500;display:flex;flex-direction:column;align-items:center;line-height:1.22}
+.vapor .ch{display:block;will-change:transform,opacity,filter}
+.vapor .ch.p{position:relative;left:.42em;top:-.42em} /* 縦書きの句読点は字の右上へ */
+.vapor{right:9vw;top:50%;transform:translateY(-50%)}
+.vapor .num{font-family:Inter,system-ui,sans-serif;letter-spacing:.02em;margin:.3em 0} /* 縦書き：数字の上下に少し間 */
+@media (max-aspect-ratio: 4/5){
+  .vapor{right:auto;left:50%;top:max(7svh,calc(env(safe-area-inset-top,0px) + 28px));transform:translateX(-50%);text-align:center;white-space:nowrap}
+  .vapor .ja{flex-direction:row;justify-content:center;letter-spacing:.08em}
+  .vapor .ch{display:inline-block}
+  .vapor .ch.p{left:0;top:0}
+  .vapor .num{margin:0 .3em} /* 横書き：数字の左右に少し間 */
+}
+/* 画面の真ん中で動く言葉（字の色：白・透明度70%） */
+.seq{position:absolute;inset:0;pointer-events:none;z-index:4;visibility:hidden;color:rgba(255,255,255,.7);font-family:"Shippori Mincho",serif;font-weight:500;line-height:1;text-shadow:0 0 10px rgba(243,238,230,.95),0 0 22px rgba(243,238,230,.7)}
+.seq .ln{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);display:flex;white-space:nowrap;letter-spacing:.06em}
+.seq .ch{display:inline-block;will-change:transform,opacity,filter}
+.seq .ln.ghost .ch{color:rgba(255,255,255,.7)}
+.seq .sq{position:absolute;inset:0;width:100%;height:100%}
+.seq .sch{position:absolute;left:0;top:0;will-change:transform,opacity,filter;white-space:nowrap}
+.seq .sc{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);opacity:0;line-height:1}
+/* 背景の文様の層 */
+#bg{position:absolute;inset:0;pointer-events:none;z-index:0}
+.patLayer{position:absolute;inset:0;opacity:0}
+.patLayer svg{position:absolute;inset:0;display:block}
+#scene{z-index:1}
+/* 背景を少しだけ暗くする層（文様の上、紙と言葉の下） */
+#dim{position:absolute;inset:0;background:#1E1612;opacity:0;pointer-events:none;z-index:0}
+/* 案内（Tap・Scroll）。クリスマスのページと同じ作り */
+.lbl{position:absolute;left:50%;transform:translateX(-50%);font:500 13px/1 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.14em;color:#2B2523;white-space:nowrap;pointer-events:none;animation:lbl 2.4s ease-in-out infinite;padding-left:.14em}
+@keyframes lbl{0%,100%{opacity:.55}50%{opacity:1}}
+.tap{position:absolute;width:96px;height:96px;margin:-48px 0 0 -48px;border:0;padding:0;border-radius:50%;background:transparent;cursor:pointer;opacity:0;visibility:hidden;transition:opacity .5s ease,visibility 0s linear .5s;-webkit-tap-highlight-color:transparent;z-index:5}
+.tap.on{opacity:1;visibility:visible;transition:opacity .5s ease,visibility 0s}
+.tap::before{content:"";position:absolute;inset:-18%;border-radius:50%;background:radial-gradient(circle,rgba(255,236,190,.75) 0%,rgba(255,226,170,.28) 40%,rgba(255,226,170,0) 70%);animation:breathe 2.4s ease-in-out infinite}
+.tap::after{content:"";position:absolute;inset:8%;border-radius:50%;border:1.5px solid rgba(43,37,35,.55);animation:ripple 2.4s cubic-bezier(.2,.6,.3,1) infinite}
+.tap i{position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:#fff;box-shadow:0 0 12px 4px rgba(255,236,190,.9);animation:dot 2.4s ease-in-out infinite}
+.tap .lbl{bottom:calc(100% + 4px)}
+@keyframes breathe{0%,100%{transform:scale(.82);opacity:.55}50%{transform:scale(1.08);opacity:1}}
+@keyframes ripple{0%{transform:scale(.55);opacity:0}25%{opacity:.9}100%{transform:scale(1.5);opacity:0}}
+@keyframes dot{0%,100%{transform:scale(.8);opacity:.75}50%{transform:scale(1.15);opacity:1}}
+/* 「Scroll」の表示：画面の下から高さの7%の位置に上げ、1.2倍の大きさにする（仮の値） */
+.scrollHint{position:absolute;left:50%;bottom:max(7svh,calc(env(safe-area-inset-bottom,0px) + 24px));width:31px;height:50px;margin-left:-15.5px;border:1.6px solid rgba(43,37,35,.6);border-radius:17px;transition:opacity .6s ease;pointer-events:none;z-index:4}
+.scrollHint::before{content:"";position:absolute;left:50%;top:9.5px;width:5px;height:10px;margin-left:-2.5px;border-radius:2.5px;background:#2B2523;animation:wheel 1.8s ease-in-out infinite}
+.scrollHint .lbl{bottom:calc(100% + 12px);font-size:15px}
+.scrollHint.gone{opacity:0}
+@keyframes wheel{0%{transform:translateY(0);opacity:0}25%{opacity:1}80%{transform:translateY(17px);opacity:0}100%{opacity:0}} /* 印を1.2倍にしたので、中の点が動く距離も 14px → 17px */
+.grain{position:absolute;inset:0;pointer-events:none;opacity:.08;mix-blend-mode:multiply;z-index:3;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");background-size:240px 240px}
+@media (prefers-reduced-motion: reduce){.tap::before,.tap::after,.tap i,.lbl,.scrollHint::before{animation:none}}
+</style>
+</head>
+<body>
+<main>
+<section class="journey" id="journey">
+  <div class="stage" id="stage" role="img" aria-label="一枚の紅色の和紙を、三角に折り、開いて折り筋を付け、四角い形に整えていく。紙の上に、折り紙の美しさについての言葉が書かれている。">
+    <div id="bg"></div>
+    <div id="dim"></div>
+    <svg id="scene" aria-hidden="true"></svg>
+    <!-- 蒸気の文字。data-in・data-out：現れる・消えるスクロールの範囲。data-need：その工程を折り終えてから出す -->
+    <!-- 画面の真ん中で動く言葉。data-fx：lines（1行ずつ）・shot（打ち込む）・square（正方形と遊ぶ） -->
+    <div class="seq" id="m3" data-in="0.27,0.28" data-out="0.365,0.38" data-need="2" data-fx="lines" data-lines="山折と|谷折が|生み出す|光と影" data-steps="0.28,0.36"></div>
+    <div class="seq" id="m4" data-in="0.46,0.47" data-out="0.585,0.60" data-need="3" data-fx="shot" data-text="重ねるほど、強く" data-steps="0.475,0.56"></div>
+    <div class="seq" id="m5" data-in="0.775,0.79" data-out="0.875,0.89" data-need="5" data-fx="square" data-text="正方形が、命を持つまで" data-steps="0.785,0.865"></div>
+    <!-- 千羽鶴の数：受け取れたときだけ出す -->
+    <div class="vapor" id="m6" data-in="0.92,0.96" data-out="2,2" data-count="1" data-fx="count"><div class="ja" id="m6ja"></div></div>
+    <div class="grain"></div>
+    <button class="tap" id="tap" type="button" aria-label="折る"><i></i><span class="lbl" aria-hidden="true">Tap</span></button>
+    <div class="scrollHint" id="hint" aria-hidden="true"><span class="lbl">Scroll</span></div>
+  </div>
+</section>
+</main>
+<script>
+(() => {
+'use strict';
+/* ------------------------------------------------------------------
+   設定（仮の値）。u はスクロールの位置（0〜1）
+   ------------------------------------------------------------------ */
+const CFG = {
+  PAPER: 0xCB1B45,               // 紅（べに）
+  BACK: '#FBF8F2',               // 紙の裏（白）
+  INK_FRONT: '#FBF1E6',          // 表に書く文字の色
+  INK_BACK: '#3A2F2B',           // 裏に書く文字の色
+  // タップを待つ位置
+  G1: 0.07,                      // 三角に折る
+  G2: 0.25,                      // 四角い形に整える
+  G3: 0.43,                      // 鶴の基本形にする
+  GH: 0.69,                      // 頭を折る
+  G4: 0.74,                      // 羽を広げる
+  ALIGN: [0.345, 0.39],          // 鶴の基本形へ切り替える前に、四角い形を真横から見る向きへ回しておく（戻るときに切り替えと重ならないよう、G3 − BACK_RANGE より手前で終える）
+  BACK_RANGE: 0.035,             // 一度折った工程は、タップの位置からこれだけ上へ戻ると、折る前の形にさかのぼる
+  UNFOLD: [0.14, 0.20],          // 開く
+  GUIDE: [0.16, 0.22],           // これから折る線の案内（光る点線）
+  ORBIT: [0.26, 0.37],           // 四角い形をゆっくり回す
+  NARROW: [0.50, 0.56],          // 脚を細く
+  REVERSE: [0.58, 0.66],         // 首と尾を折り上げる
+  FLY: [0.86, 0.97],             // 飛び立つ（一回転し終えてから）
+  FLOCK: [0.86, 0.96],           // 群れが現れる
+  // 余白の言葉：[出る始め, 出きる, 消え始め, 消えきる]
+  FOLD_MS: 1600, COLLAPSE_MS: 2600, PETAL_MS: 2800, HEAD_MS: 1500, WING_MS: 2200,
+  SMOOTH: 10,
+  COUNT_URL: 'https://abacus.jasoncameron.dev/hit/vvv0w0vvv.github.io/origami-senbazuru-2026',
+  // カメラ（四角い形まで）：zoom 寄る大きさ・fx,fy 見る中心・tilt 見下ろす角度・yaw 回る角度
+  CAM: [
+    { u: 0.000, zoom: 3.2, fx: 0.0, fy: 0.80, tilt: 0.10, yaw: -0.22 }, // 始まり：紙の表面と題に寄る
+    { u: 0.055, zoom: 1.0, fx: 0.0, fy: 0.00, tilt: 0.32, yaw: 0 },     // 引いて紙全体
+    { u: 0.070, zoom: 1.0, fx: 0.0, fy: 0.00, tilt: 0.32, yaw: 0 },
+    { u: 0.100, zoom: 2.3, fx: 0.0, fy: 0.62, tilt: 0.18, yaw: 0.10 },  // 裏に出た言葉に寄る
+    { u: 0.125, zoom: 2.3, fx: 0.0, fy: 0.62, tilt: 0.18, yaw: 0.10 },
+    { u: 0.150, zoom: 1.0, fx: 0.0, fy: 0.00, tilt: 0.30, yaw: 0 },     // 引いて、開く
+    { u: 0.185, zoom: 2.7, fx: 0.0, fy: 0.00, tilt: 0.00, yaw: 0.35 },  // 真上から、紙の中心に寄る
+    { u: 0.225, zoom: 1.0, fx: 0.0, fy: 0.00, tilt: 0.24, yaw: 0 },     // 引いて、これから折る線の全体
+    { u: 0.250, zoom: 1.0, fx: 0.0, fy: 0.00, tilt: 0.24, yaw: 0 },
+    { u: 0.300, zoom: 2.6, fx: 1.0, fy: 0.00, tilt: 0.0, yaw: 0.0 },    // （四角のあと）手前の稜線に寄る ※fx は「稜線に寄る度合い」
+    { u: 0.345, zoom: 1.0, fx: 0.0, fy: 0.00, tilt: 0.0, yaw: 0.0 },
+    { u: 0.430, zoom: 1.0, fx: 0.0, fy: 0.00, tilt: 0.0, yaw: 0.0 },
+  ],
+  // ※四角い形のあとは、tilt・yaw・zoom を「四角に整えた瞬間からの変化」として使う（つなぎ目で角度が飛ばないように）
+  // カメラ（鶴の基本形から）
+  CAM2: [
+    { u: 0.43, zoom: 1.25, tilt: 0.00, yaw: 0.00, fy: 0.0 },        // 四角い形を真横から見た向きと、ぴったり重ねる
+    { u: 0.50, zoom: 2.30, tilt: 0.35, yaw: 0.55, fy: 0.25 }, // 重なった紙の縁に寄る
+    { u: 0.56, zoom: 1.20, tilt: 0.10, yaw: 0.00, fy: 0.0 },
+    { u: 0.64, zoom: 1.10, tilt: 0.05, yaw: -0.15, fy: 0.15 },
+    { u: 0.660, zoom: 1.10, tilt: 0.05, yaw: -0.15, fy: 0.15 },
+    { u: 0.688, zoom: 5.20, tilt: 0.38, yaw: 0.80, fy: 0.15, hw: 1 },   // 首から頭までが画面いっぱいに入る寄り方：頭を斜め前（約46度）の少し上から
+    { u: 0.690, zoom: 5.20, tilt: 0.38, yaw: 0.80, fy: 0.15, hw: 1 },   // 頭を折るタップを待つ
+    { u: 0.715, zoom: 1.15, tilt: 0.15, yaw: 1.5708, fy: 0.15 },        // 引きながら、鶴の顔がこちらを向く真正面へ（yaw 90°）
+    { u: 0.765, zoom: 1.15, tilt: 0.15, yaw: 1.5708, fy: 0.15 },        // 正面のまま羽を広げる
+    { u: 0.855, zoom: 1.15, tilt: 0.22, yaw: 7.8540, fy: 0.15 },        // その場で一回転（360°）して、また正面へ
+    { u: 1.00, zoom: 1.00, tilt: 0.25, yaw: 7.8540, fy: 0.15 },         // 飛び立つ
+  ],
+};
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = s => document.querySelector(s);
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const smooth = t => t * t * (3 - 2 * t);
+const easeInOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const beat = (t, [a, b]) => clamp((t - a) / (b - a));
+const lerp = (a, b, t) => a + (b - a) * t;
+const NS = 'http://www.w3.org/2000/svg', R2 = Math.SQRT2, D = Math.PI / 180;
+const hex = n => '#' + n.toString(16).padStart(6, '0');
+const f2 = v => v.toFixed(2);
+
+/* ------------------------------------------------------------------
+   紙の形：一辺2の正方形を、ひし形に置く（角が上下左右）
+   中心から8本の線（角へ4本・辺の真ん中へ4本）で、8つの三角形に分ける
+   ------------------------------------------------------------------ */
+const RAYS = [...Array(8)].map((_, i) => { const a = i * Math.PI / 4, diag = i % 2 === 0, L = diag ? R2 : 1; return { a, diag, L, p: [L * Math.cos(a), L * Math.sin(a)] }; });
+const FACES = [...Array(8)].map((_, i) => [i, (i + 1) % 8]);
+
+/* ------------------------------------------------------------------
+   和紙の質感と、紙に書く言葉
+   ------------------------------------------------------------------ */
+let TEX = 2048;
+const toTex = (x, y) => [(x + R2) / (2 * R2) * TEX, (R2 - y) / (2 * R2) * TEX];
+function fibers(ctx, base, light, dark, seed){
+  let s = seed; const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const k = (TEX / 2048) * (TEX / 2048), q = TEX / 2048;
+  ctx.fillStyle = base; ctx.fillRect(0, 0, TEX, TEX);
+  for (let i = 0; i < 280 * k + 20; i++){ const x = rnd() * TEX, y = rnd() * TEX, r = (80 + rnd() * 280) * q, g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, rnd() < .5 ? light.replace('A', '0.07') : dark.replace('A', '0.06')); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, 2 * r, 2 * r); }
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 10400 * k; i++){
+    const x = rnd() * TEX, y = rnd() * TEX, len = (16 + rnd() * 92) * q, ang = rnd() * Math.PI * 2, bend = (rnd() - .5) * 0.9;
+    ctx.strokeStyle = (rnd() < .62 ? light : dark).replace('A', (0.08 + rnd() * 0.16).toFixed(2)); ctx.lineWidth = Math.max(0.5, (1.2 + rnd() * 2.4) * q);
+    ctx.beginPath(); ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + Math.cos(ang + bend) * len * .5, y + Math.sin(ang + bend) * len * .5, x + Math.cos(ang) * len, y + Math.sin(ang) * len); ctx.stroke();
+  }
+  for (let i = 0; i < 20000 * k; i++){ ctx.fillStyle = (rnd() < .5 ? light : dark).replace('A', (0.05 + rnd() * 0.1).toFixed(2)); ctx.fillRect(rnd() * TEX, rnd() * TEX, Math.max(1, (2 + 2 * rnd()) * q), Math.max(1, (2 + 2 * rnd()) * q)); }
+}
+function vtext(ctx, cols, cx, top, size, color, gapEm = 1.5){
+  ctx.fillStyle = color; ctx.font = `500 ${size}px "Shippori Mincho", serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const n = cols.length, x0 = cx + (n - 1) * size * gapEm / 2;
+  cols.forEach((col, i) => { const x = x0 - i * size * gapEm; [...col].forEach((ch, j) => {
+    const y = top + size * (j + .5) * 1.12;
+    if ('、。'.includes(ch)) ctx.fillText(ch, x + size * .55, y - size * .5); else ctx.fillText(ch, x, y); }); });
+}
+function htext(ctx, s, cx, y, size, color){ ctx.fillStyle = color; ctx.font = `500 ${size}px Inter, system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.letterSpacing = '0.14em'; ctx.fillText(s, cx, y); ctx.letterSpacing = '0px'; }
+async function buildTextures(size){
+  TEX = size;
+  try { await Promise.all([document.fonts.load('500 40px "Shippori Mincho"'), document.fonts.load('500 20px Inter')]); } catch (e) {}
+  const u = TEX / (2 * R2);
+  const f = document.createElement('canvas'); f.width = f.height = TEX; const fc = f.getContext('2d');
+  fibers(fc, hex(CFG.PAPER), 'rgba(255,236,226,A)', 'rgba(70,0,20,A)', 7);
+  const plainCanvas = document.createElement('canvas'); plainCanvas.width = plainCanvas.height = TEX; plainCanvas.getContext('2d').drawImage(f, 0, 0); // 文字のない紅の和紙（鶴の形で使う）
+  // 紙の上には言葉を書かない（言葉は余白の蒸気の文字にした）
+  const b = document.createElement('canvas'); b.width = b.height = TEX; const bc = b.getContext('2d');
+  fibers(bc, CFG.BACK, 'rgba(255,255,255,A)', 'rgba(170,150,125,A)', 11);
+
+  const url = c => new Promise(r => c.toBlob(bl => r(URL.createObjectURL(bl)), 'image/png'));
+  return { front: await url(f), back: await url(b), plain: await url(plainCanvas) };
+}
+
+/* ------------------------------------------------------------------
+   折った形（正確な作り）：中心は原点、z は見る人のほう
+   ------------------------------------------------------------------ */
+function triPoints(phi){
+  return RAYS.map(r => { const [x, y] = r.p; if (y >= -1e-9) return [x, y, 0]; return [x, y * Math.cos(phi), -y * Math.sin(phi) + 0.004 * (phi / Math.PI)]; });
+}
+function basePoints(thD){
+  const c45 = Math.SQRT1_2, A = Math.cos(thD), B = Math.sin(thD) * c45, k = Math.hypot(A, B);
+  const thM = Math.atan2(B, A) + Math.acos(clamp(c45 / k, -1, 1));
+  return RAYS.map(r => { const th = r.diag ? thD : thM; return [r.L * Math.sin(th) * Math.cos(r.a), r.L * Math.sin(th) * Math.sin(r.a), -r.L * Math.cos(th)]; });
+}
+
+/* ------------------------------------------------------------------
+   鶴の形（省略した作り）：何枚かの三角の紙を、決めた途中の形のあいだでなめらかに動かす
+   y は上、z は見る人のほう。前の紙と後ろの紙を、少しだけ前後にずらして重ねる
+   ------------------------------------------------------------------ */
+function rotZ(p, c, a){ const s = Math.sin(a), co = Math.cos(a), x = p[0] - c[0], y = p[1] - c[1]; return [c[0] + x * co - y * s, c[1] + x * s + y * co, p[2]]; }
+let HEADC = [0, 0, 0]; // 頭の真ん中（カメラを寄せる先）
+function cranePieces(p3, n, r, h, w){
+  // p3：鶴の基本形へ（前後の紙を花びらのように上へ開く） n：脚を細く r：首と尾 h：頭 w：羽を広げる
+  // 幅は、折る角度から計算する：角を中心線に合わせて折るたびに、とがった角の片側の角度は半分になる
+  //   四角い形 45° → 鶴の基本形 22.5° → 脚を細く 11.25°。片側の幅 ＝ 長さ × tan(片側の角度)
+  const LEN = 1.15, wingHalf = lerp(0.707, LEN * Math.tan(22.5 * D), p3), legHalf = lerp(wingHalf, LEN * Math.tan(11.25 * D), n), top = lerp(0.707, 0.16, p3);
+  const legLen = lerp(0.707, LEN, p3), wingLen = lerp(0.707, LEN, p3);
+  const pieces = [];
+  const add = (id, pts, tex, layer) => pieces.push({ id, pts, tex, layer });
+  // 体（四角い形の閉じた側）
+  [1, -1].forEach(sd => add('body' + sd, [[-wingHalf, 0, 0.004 * sd], [0, top, 0.012 * sd * (1 + w * 6)], [wingHalf, 0, 0.004 * sd]], [[-0.5, 0], [0, 0.5], [0.5, 0]], sd));
+  // 羽（前と後ろ）：下の角から、横の線を軸に上へ開く。羽を広げるときは、横の線を軸に手前（奥）へ倒す
+  [1, -1].forEach(sd => {
+    const a = Math.PI * p3, tip = [0, -wingLen * Math.cos(a), wingLen * Math.sin(a) * sd + 0.02 * sd];
+    let pts = [[-wingHalf, 0, 0.02 * sd], tip, [wingHalf, 0, 0.02 * sd]];
+    if (w > 0){ const b = w * 72 * D * sd; pts = pts.map(p => [p[0], p[1] * Math.cos(b) - p[2] * Math.sin(b) * 0, p[1] * Math.sin(b) + p[2]]); }
+    add('wing' + sd, pts, [[-0.5, 0], [0, -0.5], [0.5, 0]], 2 * sd);
+  });
+  // 脚（首と尾になる）：前後2枚ずつ。左の脚の先の一部は頭
+  const pivot = [0, -0.02, 0];
+  [[-1, 'neck'], [1, 'tail']].forEach(([lr, nm]) => {
+    const tip = [lr * 0.02, -legLen, 0], outer = [lr * legHalf, 0, 0], inner = [0, 0, 0];
+    const ang = lr < 0 ? -r * 148 * D : r * 132 * D;
+    const R = p => rotZ(p, pivot, ang);
+    [1, -1].forEach(sd => {
+      const z = 0.008 * sd, Z = p => [p[0], p[1], p[2] + z];
+      // 首・頭・尾は、前後2枚の紙が V 字に開いて厚みが出る：折り目の側（外側）はくっついたまま、反対側（内側）を開く（開き 0.06 は仮の値）
+      const OPEN = 0.06 * r, ZN = (p, t) => [p[0], p[1], p[2] + z + OPEN * sd * t];
+      if (nm === 'neck'){
+        const hA = [lerp(outer[0], tip[0], .74), lerp(outer[1], tip[1], .74), 0], hB = [lerp(inner[0], tip[0], .74), lerp(inner[1], tip[1], .74), 0]; // 首の先の2割6分を頭にする
+        add(nm + 'a' + sd, [outer, inner, hB].map(R).map((p, i) => ZN(p, i === 0 ? 0 : 1)), [[-0.3, 0], [0, 0], [0, -0.4]], sd);
+        add(nm + 'b' + sd, [outer, hB, hA].map(R).map((p, i) => ZN(p, i === 1 ? 1 : 0)), [[-0.3, 0], [0, -0.4], [-0.2, -0.4]], sd);
+        // 頭：首の先を、首の向きに対して折り曲げる
+        const hc = R([(hA[0] + hB[0]) / 2, (hA[1] + hB[1]) / 2, 0]);
+        const head = [hA, hB, tip].map(R).map(p => rotZ(p, hc, h * 72 * D)).map((p, i) => ZN(p, i === 1 ? 1 : 0)); // 頭の先（tip）では、前後2枚がぴったり閉じる
+        if (sd === 1) HEADC = [(head[0][0] + head[1][0] + head[2][0]) / 3, (head[0][1] + head[1][1] + head[2][1]) / 3, 0];
+        add('head' + sd, head, [[-0.2, -0.4], [0, -0.4], [0, -0.5]], sd);
+      } else add(nm + sd, [outer, inner, tip].map(R).map((p, i) => ZN(p, i === 1 ? 1 : 0)), [[0.3, 0], [0, 0], [0, -0.5]], sd);
+    });
+  });
+  return pieces;
+}
+
+/* ------------------------------------------------------------------
+   描く
+   ------------------------------------------------------------------ */
+const svg = $('#scene'), stage = $('#stage'), journey = $('#journey'), tapBtn = $('#tap'), hint = $('#hint');
+let W = 0, H = 0, SCALE = 1, TEXURL = null;
+const faceEls = [], pieceEls = {};
+const LIGHT = (() => { const v = [-0.45, 0.55, 0.75], n = Math.hypot(...v); return v.map(c => c / n); })();
+function buildScene(){
+  let h = '<defs>';
+  // 三角形どうしの境目にすき間の線が出ないよう、切り抜く形を外側へ少し広げる
+  FACES.forEach(([i, j], k) => { const a = RAYS[i].p, b = RAYS[j].p, c = [(a[0] + b[0]) / 3, (a[1] + b[1]) / 3], e = 0.012;
+    const g = p => { const dx = p[0] - c[0], dy = p[1] - c[1], l = Math.hypot(dx, dy) || 1; return [p[0] + dx / l * e, p[1] + dy / l * e]; };
+    const P = [g([0, 0]), g(a), g(b)]; h += `<clipPath id="fc${k}" clipPathUnits="userSpaceOnUse"><polygon points="${P.map(p => p.join(',')).join(' ')}"/></clipPath>`; });
+  h += '<filter id="glowLine" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
+  h += '<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>';
+  h += '</defs><g id="flock"></g><g id="shadow"></g><g id="faces"></g><g id="creases"></g><g id="guides" filter="url(#glowLine)"></g><g id="crane"></g>';
+  svg.innerHTML = h;
+  const g = svg.querySelector('#faces');
+  FACES.forEach((_, k) => {
+    const el = document.createElementNS(NS, 'g');
+    el.innerHTML = `<g class="tex" clip-path="url(#fc${k})"><g transform="scale(1,-1)"><image class="img" x="${-R2}" y="${-R2}" width="${2 * R2}" height="${2 * R2}" preserveAspectRatio="none"/></g></g><polygon class="shade"/><polyline class="edge" fill="none"/>`;
+    g.appendChild(el);
+    faceEls.push({ el, tex: el.querySelector('.tex'), img: el.querySelector('.img'), shade: el.querySelector('.shade'), edge: el.querySelector('.edge') });
+  });
+  // 折り筋（実際に折ったあとに残る薄い線）と、これから折る線の案内（光る点線）
+  const cg = svg.querySelector('#creases'), gg = svg.querySelector('#guides');
+  RAYS.forEach(() => {
+    const c = document.createElementNS(NS, 'line'); c.setAttribute('stroke', 'rgba(70,10,20,0.35)'); c.setAttribute('stroke-width', '0.9'); cg.appendChild(c);
+    // これから折る線の案内：背景の文様と半透明の紙に溶けないよう、濃いめの金色（仮の値）。太さは元の1.6のまま
+    const l = document.createElementNS(NS, 'line'); l.setAttribute('stroke', '#C9A24E'); l.setAttribute('stroke-width', '1.6'); l.setAttribute('stroke-dasharray', '5 5'); l.setAttribute('stroke-linecap', 'round'); gg.appendChild(l);
+  });
+  // 鶴の形の紙（切り抜く形は、紙の上の決まった位置）
+  const defs = svg.querySelector('defs'), crane = svg.querySelector('#crane');
+  cranePieces(0, 0, 0, 0, 0).forEach(pc => {
+    const t = pc.tex, c = [(t[0][0] + t[1][0] + t[2][0]) / 3, (t[0][1] + t[1][1] + t[2][1]) / 3], e = 0.012;
+    const gx = p => { const dx = p[0] - c[0], dy = p[1] - c[1], l = Math.hypot(dx, dy) || 1; return [p[0] + dx / l * e, p[1] + dy / l * e]; };
+    defs.insertAdjacentHTML('beforeend', `<clipPath id="cp_${pc.id}" clipPathUnits="userSpaceOnUse"><polygon points="${t.map(gx).map(p => p.join(',')).join(' ')}"/></clipPath>`);
+    const el = document.createElementNS(NS, 'g');
+    el.innerHTML = `<g class="tex" clip-path="url(#cp_${pc.id})"><g transform="scale(1,-1)"><image class="img" x="${-R2}" y="${-R2}" width="${2 * R2}" height="${2 * R2}" preserveAspectRatio="none"/></g></g><polygon class="dye" fill="#CB1B45" fill-opacity="0"/><polygon class="shade"/><polygon class="edge" fill="none" stroke="rgba(70,10,20,0.28)" stroke-width="0.7"/>`;
+    crane.appendChild(el);
+    pieceEls[pc.id] = { el, tex: el.querySelector('.tex'), img: el.querySelector('.img'), dye: el.querySelector('.dye'), shade: el.querySelector('.shade'), edge: el.querySelector('.edge') };
+  });
+}
+function view(p, tilt, yaw){
+  const cy = Math.cos(yaw), sy = Math.sin(yaw); let x = p[0] * cy - p[1] * sy, y = p[0] * sy + p[1] * cy, z = p[2];
+  const ct = Math.cos(tilt), st = Math.sin(tilt); const y2 = y * ct - z * st, z2 = y * st + z * ct;
+  return [x, y2, z2];
+}
+// 鶴の形の見る向き：体の縦（y）を軸に回し（yaw）、横（x）を軸に傾ける（tilt）
+function view2(p, tilt, yaw){
+  const cy = Math.cos(yaw), sy = Math.sin(yaw); const x = p[0] * cy + p[2] * sy, z = -p[0] * sy + p[2] * cy, y = p[1];
+  const ct = Math.cos(tilt), st = Math.sin(tilt); return [x, y * ct - z * st, y * st + z * ct];
+}
+// 1枚の三角の紙を描く：紙の座標 → 画面の座標の写し方、表か裏か、光の当たり方
+function drawTri(F, tex3, scr, V, texFront, texBack, edgeOn){
+  const [s0, s1, s2] = scr, [a, b, c] = V;
+  const u1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], u2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  let n = [u1[1] * u2[2] - u1[2] * u2[1], u1[2] * u2[0] - u1[0] * u2[2], u1[0] * u2[1] - u1[1] * u2[0]]; const nl = Math.hypot(...n) || 1; n = n.map(v => v / nl);
+  const front = n[2] >= 0; if (!front) n = n.map(v => -v);
+  const lit = Math.max(0, n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]);
+  const [p0, p1, p2] = tex3, q1 = [p1[0] - p0[0], p1[1] - p0[1]], q2 = [p2[0] - p0[0], p2[1] - p0[1]];
+  const det = q1[0] * q2[1] - q1[1] * q2[0] || 1e-9;
+  const d1 = [s1[0] - s0[0], s1[1] - s0[1]], d2 = [s2[0] - s0[0], s2[1] - s0[1]];
+  const ma = (d1[0] * q2[1] - d2[0] * q1[1]) / det, mc = (d2[0] * q1[0] - d1[0] * q2[0]) / det;
+  const mb = (d1[1] * q2[1] - d2[1] * q1[1]) / det, md = (d2[1] * q1[0] - d1[1] * q2[0]) / det;
+  const e = s0[0] - ma * p0[0] - mc * p0[1], f = s0[1] - mb * p0[0] - md * p0[1];
+  F.tex.setAttribute('transform', `matrix(${ma.toFixed(4)} ${mb.toFixed(4)} ${mc.toFixed(4)} ${md.toFixed(4)} ${e.toFixed(2)} ${f.toFixed(2)})`);
+  const want = front ? texFront : texBack; if (F.cur !== want){ if (want) F.img.setAttribute('href', want); else F.img.removeAttribute('href'); F.cur = want; }
+  const poly = scr.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const dark = clamp(0.62 - 0.62 * lit), light = clamp((lit - 0.82) * 1.6);
+  F.shade.setAttribute('points', poly);
+  F.shade.setAttribute('fill', light > 0 ? `rgba(255,248,236,${(light * 0.22).toFixed(3)})` : `rgba(30,10,10,${(dark * 0.55).toFixed(3)})`);
+  return { poly, front };
+}
+function render(st){
+  const { tilt, yaw, center, mode } = st, S = SCALE * st.zoom;
+  // 正確な作り（四角い形まで）
+  const baseOn = st.baseOpacity > 0, craneOn = st.craneOpacity > 0;
+  svg.querySelector('#faces').style.opacity = st.baseOpacity.toFixed(3);
+  svg.querySelector('#creases').style.opacity = st.baseOpacity.toFixed(3);
+  svg.querySelector('#guides').style.opacity = st.baseOpacity.toFixed(3);
+  svg.querySelector('#crane').style.opacity = st.craneOpacity.toFixed(3);
+  let shadowSpread = 1, shadowLow = 1, Rinfo = null;
+  if (baseOn){
+    const V = st.pts3.map(p => view(p, tilt, yaw)), O = view([0, 0, 0], tilt, yaw), Fc = view(st.focus, tilt, yaw);
+    const sx = p => W / 2 + (p[0] - Fc[0]) * S, sy = p => H * center - (p[1] - Fc[1]) * S;
+    const order = FACES.map(([i, j], k) => ({ k, i, j, z: (O[2] + V[i][2] + V[j][2]) / 3 })).sort((a, b) => a.z - b.z);
+    const parent = svg.querySelector('#faces');
+    order.forEach(({ k, i, j }) => {
+      const F = faceEls[k], scr = [[sx(O), sy(O)], [sx(V[i]), sy(V[i])], [sx(V[j]), sy(V[j])]];
+      drawTri(F, [[0, 0], RAYS[i].p, RAYS[j].p], scr, [O, V[i], V[j]], TEXURL.front, TEXURL.back);
+      // 面の境目の線：まだ折っていない紙には出さない。四角に整えはじめたら、折れた面の境目として出す
+      F.edge.setAttribute('points', scr.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ') + ` ${scr[0][0].toFixed(1)},${scr[0][1].toFixed(1)}`);
+      F.edge.setAttribute('stroke', `rgba(70,10,20,${(0.28 * st.edges).toFixed(3)})`); F.edge.setAttribute('stroke-width', '0.7');
+      parent.appendChild(F.el);
+    });
+    const lines = svg.querySelectorAll('#creases line'), guides = svg.querySelectorAll('#guides line');
+    const Dg = Math.hypot(W, H);
+    RAYS.forEach((r, i) => {
+      const p = V[i], ox = sx(O), oy = sy(O), ex = sx(p), ey = sy(p);
+      lines[i].setAttribute('x1', ox); lines[i].setAttribute('y1', oy); lines[i].setAttribute('x2', ex); lines[i].setAttribute('y2', ey);
+      lines[i].setAttribute('opacity', (st.creaseMade[i] || 0).toFixed(3));
+      // これから折る線の案内：紙を開いたあとは、画面の外のその線の方向から、線ごと中心へ飛び込んで所定の位置に収まる（1本ずつ少しずらす）
+      let k = st.guide, ax = ox, ay = oy, bx = ex, by = ey;
+      if (st.guideFly){
+        k = smooth(clamp(st.guide * 1.6 - i * 0.075));
+        const len = Math.hypot(ex - ox, ey - oy) || 1, dx = (ex - ox) / len, dy = (ey - oy) / len, far = Dg * (1 - k);
+        ax = ox + dx * far; ay = oy + dy * far; bx = ex + dx * far; by = ey + dy * far;
+      }
+      guides[i].setAttribute('x1', ax.toFixed(1)); guides[i].setAttribute('y1', ay.toFixed(1)); guides[i].setAttribute('x2', bx.toFixed(1)); guides[i].setAttribute('y2', by.toFixed(1));
+      guides[i].setAttribute('opacity', (Math.min(1, k * 2.5) * (st.creaseMade[i] ? 0.5 : 1)).toFixed(3));
+    });
+    shadowSpread = Math.max(...V.map(p => Math.abs(p[0] - Fc[0]))) * S; shadowLow = Math.max(...V.map(p => -(p[1] - Fc[1])), -(O[1] - Fc[1])) * S;
+    Rinfo = { s: p => [sx(p), sy(p)], V, O };
+  }
+  // 省略した作り（鶴の形）
+  if (craneOn){
+    const pcs = cranePieces(st.p3, st.narrow, st.rev, st.head, st.wing);
+    const lift = st.lift || [0, 0, 0], sc = st.craneScale || 1;
+    const place = p => [p[0] * sc + lift[0], p[1] * sc + lift[1], p[2] * sc + lift[2]];
+    const hw = st.hw || 0, hcp = place(HEADC);
+    const Fc = view2([lerp(st.cfx || 0, hcp[0], hw), lerp(st.cfy || 0, hcp[1], hw), lerp(0, hcp[2], hw)], st.ctilt, st.cyaw);
+    const proj = p => view2(place(p), st.ctilt, st.cyaw);
+    const sx = v => W / 2 + (v[0] - Fc[0]) * S, sy = v => H * center - (v[1] - Fc[1]) * S;
+    const list = pcs.map(pc => { const V = pc.pts.map(proj); return { pc, V, z: (V[0][2] + V[1][2] + V[2][2]) / 3 + pc.layer * 0.0005 }; }).sort((a, b) => a.z - b.z);
+    const parent = svg.querySelector('#crane');
+    list.forEach(({ pc, V }) => {
+      const F = pieceEls[pc.id], scr = V.map(v => [sx(v), sy(v)]);
+      const r = drawTri(F, pc.tex, scr, V, TEXURL.plain, TEXURL.plain);
+      F.edge.setAttribute('points', r.poly);
+      // 羽を広げるのに合わせて、紅に染まっていく：体 → 羽 → 首と尾 → 頭 の順に、少しずつずらして（色の濃さは最大88%。仮の値）
+      const delay = /^body/.test(pc.id) ? 0 : /^wing/.test(pc.id) ? 0.15 : /^head/.test(pc.id) ? 0.45 : 0.3;
+      const dye = smooth(clamp(((st.wing || 0) * 1.45 - delay) / 1));
+      F.dye.setAttribute('points', r.poly); F.dye.setAttribute('fill-opacity', (0.88 * dye).toFixed(3));
+      parent.appendChild(F.el);
+    });
+    const all = list.flatMap(o => o.V);
+    if (!baseOn){ shadowSpread = Math.max(...all.map(v => Math.abs(v[0] - Fc[0]))) * S; shadowLow = Math.max(...all.map(v => -(v[1] - Fc[1]))) * S; }
+    Rinfo = Rinfo || {}; Rinfo.craneCenter = [sx(proj([0, 0.1, 0])), sy(proj([0, 0.1, 0]))];
+    { const v = view2(hcp, st.ctilt, st.cyaw); Rinfo.headScreen = [sx(v), sy(v)]; }
+  }
+  const sh = svg.querySelector('#shadow');
+  const sa = 0.12 * clamp(2 - st.zoom) * (1 - (st.flyAway || 0));
+  sh.innerHTML = `<ellipse cx="${W / 2}" cy="${(H * center + shadowLow + S * 0.35).toFixed(1)}" rx="${(shadowSpread * 0.9).toFixed(1)}" ry="${(S * 0.12).toFixed(1)}" fill="rgba(60,40,30,${sa.toFixed(3)})" filter="url(#glowLine)"/>`;
+  return Rinfo;
+}
+
+/* ------------------------------------------------------------------
+   千羽鶴：ほかの人が折った鶴の群れ（数は Abacus から）
+   ------------------------------------------------------------------ */
+let COUNT = null;
+const FLOCK_COLORS = ['#CB1B45', '#FBF8F2', '#E2BE9F', '#CB1B45', '#D0104C']; // 紅・白・鳥の子色（#E2BE9F）・紅・韓紅花（#D0104C）
+function craneIcon(x, y, s, col, a){
+  return `<g transform="translate(${f2(x)} ${f2(y)}) scale(${f2(s)})" opacity="${f2(a)}"><path d="M-10 0 L-2 -2 L0 -9 L2 -2 L10 0 L2 1 L6 6 L0 2 L-6 6 L-2 1 Z" fill="${col}" stroke="rgba(60,30,30,.25)" stroke-width=".4"/></g>`;
+}
+function renderFlock(k){
+  const g = svg.querySelector('#flock');
+  if (k <= 0){ if (g.childNodes.length) g.innerHTML = ''; return; }
+  const n = Math.min(90, Math.max(24, COUNT ? COUNT : 48)); let s = 3, h = '';
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  for (let i = 0; i < n; i++){
+    const x = W * (0.06 + rnd() * 0.88), y = H * (0.08 + rnd() * 0.46) - (1 - k) * H * 0.15 * rnd(), sc = 0.8 + rnd() * 1.6;
+    const appear = clamp(k * 1.4 - i / n * 0.4);
+    if (appear > 0) h += craneIcon(x + Math.sin(NOW / 1400 + i) * 4, y + Math.cos(NOW / 1700 + i) * 3, sc * (W < 600 ? 0.9 : 1.2), FLOCK_COLORS[i % FLOCK_COLORS.length], appear * (0.55 + rnd() * 0.45));
+  }
+  g.innerHTML = h;
+}
+async function countCrane(){
+  try {
+    if (!/^https?:$/.test(location.protocol)) return; // ファイルを直接開いたときは数えない
+    const r = await fetch(CFG.COUNT_URL, { cache: 'no-store' }); if (!r.ok) return;
+    const j = await r.json(), n = parseInt(j.value, 10); if (!n) return;
+    COUNT = n;
+    $('#m6ja').innerHTML = `あなたの鶴は<span class="num">${n.toLocaleString('ja-JP')}</span>羽目。`;
+    splitVapor($('#m6ja')); sizeVapors();
+  } catch (e) {}
+}
+
+/* ------------------------------------------------------------------
+   蒸気の文字：かすみから少しずつ輪郭がはっきりして現れ、ゆらぎながら立ちのぼって消える
+   ------------------------------------------------------------------ */
+// 1文字ずつに分ける（<br> はそのまま残す）
+// 1文字ずつに分ける。添え書き（small）や数字（.num）などの囲みは残したまま、中の文字だけを分ける
+function splitVapor(el){
+  const walk = node => [...node.childNodes].forEach(c => {
+    if (c.nodeType === 3){
+      const frag = document.createDocumentFragment();
+      [...c.textContent].forEach(ch => { const s = document.createElement('span'); s.className = 'ch' + ('、。'.includes(ch) ? ' p' : ''); s.textContent = ch === ' ' ? '\u00a0' : ch; frag.appendChild(s); });
+      node.replaceChild(frag, c);
+    } else if (c.nodeType === 1 && c.classList.contains('num')) c.classList.add('ch');
+    else if (c.nodeType === 1 && !c.classList.contains('ch') && c.tagName !== 'BR') walk(c);
+  });
+  walk(el);
+}
+const VAPORS = [...document.querySelectorAll('.vapor')];
+VAPORS.forEach(v => v.querySelectorAll('.ja, .en').forEach(splitVapor));
+// 文字1つの見え方：qi は現れる進み、qo は消える進み（どちらも 0〜1）
+function vaporChar(ch, qi, qo, i){
+  const o = qi * (1 - qo);
+  if (o <= 0.001){ if (ch._o !== 0){ ch.style.opacity = 0; ch._o = 0; } return; }
+  const blur = reduce ? 0 : (1 - qi) * 7 + qo * 9, dy = (1 - qi) * 10 - qo * 34, dx = reduce ? 0 : qo * Math.sin(i * 1.7) * 7;
+  ch.style.opacity = o.toFixed(3); ch._o = 1;
+  ch.style.filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : 'none';
+  ch.style.transform = `translate(${dx.toFixed(1)}px,${dy.toFixed(1)}px) scale(${(1 + qo * 0.12).toFixed(3)})`;
+}
+// 言葉ごとの出し方：pin（現れる進み）・pout（消える進み）から、文字ごとに少しずつずらして動かす
+function renderVapors(u){
+  VAPORS.forEach(v => {
+    const ok = (v.dataset.need ? done(+v.dataset.need) : true) && (!v.dataset.count || COUNT);
+    const [a0, a1] = v.dataset.in.split(',').map(Number), [d0, d1] = v.dataset.out.split(',').map(Number);
+    // 最初から出ている言葉（data-in が -1）は、開いてすぐ、時間で現れる
+    let pin = a0 < 0 ? clamp((NOW - LOADED) / 2200) : smooth(beat(u, [a0, a1]));
+    let pout = smooth(beat(u, [d0, d1]));
+    if (!ok){ pin = 0; }
+    const chs = v.querySelector('.ja').querySelectorAll('.ch'), n = chs.length, st = n > 1 ? 0.5 / (n - 1) : 0;
+    chs.forEach((ch, i) => {
+      const qi = clamp((pin * (1 + st * (n - 1)) - i * st) / 1), qo = clamp((pout * (1 + st * (n - 1)) - i * st) / 1);
+      vaporChar(ch, v.dataset.fx === 'brush' && !reduce ? (pin > 0 ? 1 : 0) : smooth(qi), smooth(qo), i);
+    });
+    v.style.visibility = pin > 0 && pout < 1 ? 'visible' : 'hidden';
+    if (pin > 0 && pout < 1) vaporFx(v, pin, pout);
+  });
+}
+const LOADED = performance.now();
+// 字の大きさ：縦書き（PC）は画面の高さの8割に、横書き（縦長のスマホ）は横幅の9割に、言葉がおさまる大きさ（1.22・1.12 は字の送りの幅）
+function sizeVapors(){
+  const vertical = W / H > 0.8;
+  VAPORS.forEach(v => { const ja = v.querySelector('.ja'); if (!ja) return; const num = ja.querySelector('.num');
+    // 数字のかたまりは、半角の数字1文字をおよそ0.6文字分として数える（数字の前後の間も足す）
+    const n = Math.max(1, ja.querySelectorAll('.ch').length + (num && !vertical ? num.textContent.length * 0.6 - 1 + 0.6 : 0));
+    const fs = vertical ? clamp((H * 0.8) / (n * 1.22), 24, 60) : clamp((W * 0.9) / (n * 1.12), 15, 34);
+    ja.style.fontSize = fs.toFixed(1) + 'px'; });
+}
+
+/* ------------------------------------------------------------------
+   文字のエフェクト（出ているあいだの呼吸と、言葉ごとに1つ）。速さ・大きさは仮の値
+   ------------------------------------------------------------------ */
+const HALO = '0 0 10px rgba(243,238,230,.95), 0 0 22px rgba(243,238,230,.7)';
+// 重ねて使う写し（光が通る層・重なる薄い字）を作る。写しの字は、動きの途中の見え方を消してから使う
+function vaporClone(v, cls){
+  const ja = v.querySelector('.ja'), c = ja.cloneNode(true);
+  c.classList.add(cls); c.removeAttribute('id');
+  c.querySelectorAll('.ch').forEach(ch => { ch.style.opacity = 1; ch.style.filter = 'none'; ch.style.transform = 'none'; });
+  Object.assign(c.style, { position: 'absolute', left: ja.offsetLeft + 'px', top: ja.offsetTop + 'px', width: ja.offsetWidth + 'px', height: ja.offsetHeight + 'px', margin: 0, pointerEvents: 'none', opacity: 0, filter: 'none' });
+  v.appendChild(c); return c;
+}
+function vaporFx(v, pin, pout){
+  const ja = v.querySelector('.ja'); if (!ja) return;
+  const now = performance.now(), t = now / 1000, full = pin >= 0.999 && pout <= 0.001, fx = v.dataset.fx, vertical = W / H > 0.8;
+  // 呼吸：出ているあいだ、濃さと輪郭がほんのわずかに満ち引きする（5秒でひと巡り）
+  if (!reduce && full){ const b = 0.5 + 0.5 * Math.sin(t * 2 * Math.PI / 5); ja.style.opacity = (0.9 + 0.1 * b).toFixed(3); ja.style.filter = `blur(${(0.35 * (1 - b)).toFixed(2)}px)`; }
+  else { ja.style.opacity = 1; ja.style.filter = 'none'; }
+  if (reduce) return;
+  if (fx === 'light'){
+    // 字の影：紙の回る角度に合わせて向きを変える
+    const yaw = (LAST_ST && LAST_ST.yaw) || 0, a = -yaw + Math.PI * 0.75;
+    ja.style.textShadow = `${HALO}, ${(Math.cos(a) * 4).toFixed(1)}px ${(Math.sin(a) * 4).toFixed(1)}px 7px rgba(43,37,35,.28)`;
+    // 淡い金色の光が、字の上を一度通り抜ける（1.8秒）
+    if (!v._sheen && full) v._sheen = vaporClone(v, 'sheen');
+    if (full && !v._sweep) v._sweep = now;
+    if (pin < 0.5) v._sweep = 0;
+    if (v._sheen){
+      const p = v._sweep ? clamp((now - v._sweep) / 1800) : 0, c = v._sheen;
+      if (p > 0 && p < 1){ const q = -25 + p * 150, dir = vertical ? 'to bottom' : 'to right', g = `linear-gradient(${dir}, transparent ${q - 14}%, #000 ${q}%, transparent ${q + 14}%)`;
+        Object.assign(c.style, { opacity: (1 - pout).toFixed(3), color: '#C9A24E', textShadow: '0 0 8px rgba(226,194,122,.8)', maskImage: g, webkitMaskImage: g });
+      } else c.style.opacity = 0;
+    }
+  }
+  if (fx === 'layer'){
+    // 薄い字が2枚、ずれた位置から近づいて重なる
+    if (!v._ghosts && ja.offsetWidth) v._ghosts = [vaporClone(v, 'ghost'), vaporClone(v, 'ghost')];
+    if (v._ghosts){ const k = 1 - smooth(pin), o = pin > 0 && pin < 1 ? 0.38 * Math.sin(Math.PI * pin) : 0;
+      [[-18, -12], [16, 10]].forEach(([dx, dy], i) => { const g = v._ghosts[i]; g.style.opacity = o.toFixed(3); g.style.transform = `translate(${(dx * k).toFixed(1)}px,${(dy * k).toFixed(1)}px)`; g.style.textShadow = 'none'; }); }
+  }
+  if (fx === 'brush'){
+    // 筆で書くように、上から下へ（横書きでは左から右へ）書き進む
+    if (pin < 1 && pout <= 0){ const q = pin * 112 - 8, g = `linear-gradient(${vertical ? 'to bottom' : 'to right'}, #000 ${q}%, transparent ${q + 8}%)`; ja.style.maskImage = g; ja.style.webkitMaskImage = g; }
+    else { ja.style.maskImage = 'none'; ja.style.webkitMaskImage = 'none'; }
+  }
+  if (fx === 'count'){
+    // 数字が0から実際の数まで数え上がり、止まったところでほんのり光る
+    const num = ja.querySelector('.num'); if (!num || !COUNT) return;
+    if (pin > 0.05 && !v._t0) v._t0 = now; if (pin <= 0) v._t0 = 0;
+    const p = v._t0 ? clamp((now - v._t0) / 2000) : 0, val = Math.round(COUNT * (1 - Math.pow(1 - p, 3)));
+    const txt = val.toLocaleString('ja-JP'); if (num.textContent !== txt) num.textContent = txt;
+    const glow = p >= 1 ? clamp(1 - (now - v._t0 - 2000) / 1500) : 0;
+    num.style.textShadow = glow > 0 ? `${HALO}, 0 0 ${(14 * glow).toFixed(1)}px rgba(226,194,122,${(0.9 * glow).toFixed(2)})` : HALO;
+  }
+}
+
+/* ------------------------------------------------------------------
+   画面の真ん中で動く言葉（場面ごとに動きが違う）。時間で動き、その場面に入るたびに最初から
+   速さ・大きさは仮の値
+   ------------------------------------------------------------------ */
+const SEQS = [...document.querySelectorAll('.seq')];
+function mkLine(parent, text, cls){
+  const d = document.createElement('div'); d.className = 'ln' + (cls ? ' ' + cls : '');
+  [...text].forEach(c => { const s = document.createElement('span'); s.className = 'ch' + ('、。'.includes(c) ? ' p' : ''); s.textContent = c; d.appendChild(s); });
+  parent.appendChild(d); return d;
+}
+SEQS.forEach(q => {
+  const fx = q.dataset.fx;
+  if (fx === 'lines') q._lines = q.dataset.lines.split('|').map(t => mkLine(q, t));
+  if (fx === 'shot'){
+    // 打ち込む字（句読点は打ち込まない）。1文字ごとに、真ん中から来る字と、左斜め上・右斜め下から来る字の3つ
+    const mk = (c, cls) => { const s = document.createElement('span'); s.className = 'sc ' + cls; s.textContent = c; q.appendChild(s); return s; };
+    q._shots = [...q.dataset.text].filter(c => !'、。'.includes(c)).map(c => ({ m: mk(c, 'main'), a: mk(c, 'gh'), b: mk(c, 'gh') }));
+    // 打ち込み終えたら一行で見せる言葉
+    q._phrase = mkLine(q, q.dataset.text, 'phrase');
+  }
+  if (fx === 'square'){
+    q.insertAdjacentHTML('beforeend', '<svg class="sq" aria-hidden="true"><g class="sqg"><rect class="sqr" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="1.4"/><path class="sqgrid" fill="none" stroke="rgba(255,255,255,.7)" stroke-width=".6" opacity=".45"/></g></svg>');
+    q._chs = [...q.dataset.text].map(c => { const s = document.createElement('span'); s.className = 'sch'; s.textContent = c; q.appendChild(s); return s; });
+  }
+});
+// 字の大きさ
+function sizeSeqs(){
+  SEQS.forEach(q => {
+    const fx = q.dataset.fx;
+    if (fx === 'lines') q.style.fontSize = clamp(Math.min(W * 0.9 / (5 * 1.05), H * 0.16), 40, 130).toFixed(1) + 'px';
+    if (fx === 'shot'){ q.style.fontSize = clamp(W * 0.88 / ([...q.dataset.text].length * 1.06), 30, 112).toFixed(1) + 'px'; q._shots.forEach(sh => [sh.m, sh.a, sh.b].forEach(el => el.style.fontSize = clamp(Math.min(W, H) * 0.22, 70, 190).toFixed(1) + 'px')); }
+    if (fx === 'square') q.style.fontSize = clamp(W * 0.9 / ([...q.dataset.text].length * 1.06), 22, 66).toFixed(1) + 'px';
+  });
+}
+const SEQFX = {
+  // スクロールに合わせて1行ずつ、行のまとまりごとにふわっと現れて消え、次の行へ。最後の行は場面を出るまで残る
+  lines(q, t, u){
+    const [A, B] = q.dataset.steps.split(',').map(Number), N = q._lines.length, seg = (B - A) / N;
+    q._lines.forEach((ln, k) => {
+      const s0 = A + k * seg, pi = smooth(beat(u, [s0, s0 + seg * 0.35])), po = k < N - 1 ? smooth(beat(u, [s0 + seg * 0.7, s0 + seg])) : 0;
+      const o = pi * (1 - po), blur = reduce ? 0 : (1 - pi) * 6 + po * 8, dy = reduce ? 0 : (1 - pi) * 12 - po * 26;
+      ln.style.opacity = o.toFixed(3); ln.style.filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : 'none';
+      ln.style.transform = `translate(-50%, calc(-50% + ${dy.toFixed(1)}px))`;
+    });
+  },
+  // 画面の真ん中の同じ1点に、スクロールに合わせて1文字ずつ重ねる：少し大きな字が中心へ収まり、同時に左斜め上・右斜め下からも同じ字が来て、中心で3つが重なる
+  //   収まった字は、次の字が来ると薄く残り、同じ場所に重なっていく。重ね終えたら、重なった字が消えて、言葉が一行で現れる
+  shot(q, t, u){
+    const [A, B] = q.dataset.steps.split(',').map(Number), n = q._shots.length, seg = (B - A) / n;
+    const easeOut = x => 1 - Math.pow(1 - x, 3);
+    const dissolve = smooth(beat(u, [B, B + seg * 0.8]));
+    q._shots.forEach((sh, i) => {
+      const s0 = A + i * seg, p = clamp((u - s0) / (seg * 0.75)), e = easeOut(p);
+      const next = i < n - 1 ? smooth(beat(u, [s0 + seg, s0 + seg * 1.6])) : 0;   // 次の字が来たら薄く残る
+      const jx = (i % 3 - 1) * 2, jy = ((i * 7) % 3 - 1) * 2;                       // 重なった字が、わずかにずれて見える
+      const mo = Math.min(1, p * 2) * lerp(1, 0.16, next) * (1 - dissolve), blur = reduce ? 0 : (1 - p) * 1.5 + dissolve * 6;
+      Object.assign(sh.m.style, { opacity: mo.toFixed(3), filter: blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : 'none', transform: `translate(calc(-50% + ${jx}px), calc(-50% + ${jy}px)) scale(${lerp(2, 1, e).toFixed(3)})` });
+      [[sh.a, -1], [sh.b, 1]].forEach(([el, g]) => {
+        const dx = g * W * 0.18 * (1 - e), dy = g * H * 0.14 * (1 - e), go = 0.28 * Math.sin(Math.PI * p) * (1 - dissolve);
+        Object.assign(el.style, { opacity: go.toFixed(3), filter: 'none', transform: `translate(calc(-50% + ${dx.toFixed(1)}px), calc(-50% + ${dy.toFixed(1)}px)) scale(${lerp(1.6, 1, e).toFixed(3)})` });
+      });
+    });
+    // 言葉が一行で現れる（行のまとまりで、ふわっと）
+    const pp = smooth(beat(u, [B + seg * 0.4, B + seg * 1.2])), pb = reduce ? 0 : (1 - pp) * 6;
+    q._pp = pp;
+    Object.assign(q._phrase.style, { opacity: pp.toFixed(3), filter: pb > 0.05 ? `blur(${pb.toFixed(2)}px)` : 'none', transform: `translate(-50%, calc(-50% + ${((1 - pp) * 12).toFixed(1)}px))` });
+  },
+  // 正方形のます目に字が入る → 正方形が45度回ってひし形に → 字が羽ばたくように飛び出して横一列に並ぶ
+  square(q, t, u){
+    // スクロールに合わせて進む：この場面のスクロールの範囲を、もとの動きの長さ（約3.6秒ぶん）に割り当てる
+    if (q.dataset.steps){ const [A, B] = q.dataset.steps.split(',').map(Number); t = clamp((u - A) / (B - A)) * (1.7 + (q._chs.length - 1) * 0.14 + 0.8); }
+    const n = q._chs.length, cx = W / 2, cy = H * 0.46, S = Math.min(W, H) * 0.42, c = S / 4, f = parseFloat(q.style.fontSize) || 40;
+    const svg = q.querySelector('.sq'), rect = q.querySelector('.sqr'), grid = q.querySelector('.sqgrid'), g = q.querySelector('.sqg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    rect.setAttribute('x', cx - S / 2); rect.setAttribute('y', cy - S / 2); rect.setAttribute('width', S); rect.setAttribute('height', S);
+    let gd = ''; for (let k = 1; k < 4; k++){ gd += `M${cx - S / 2 + c * k} ${cy - S / 2} v${S} M${cx - S / 2} ${cy - S / 2 + c * k} h${S} `; } grid.setAttribute('d', gd);
+    const per = 4 * S, draw = clamp(t / 0.9), rot = smooth(clamp((t - 0.9) / 0.8)) * 45, fade = 1 - clamp((t - 1.7) / 1.2);
+    rect.setAttribute('stroke-dasharray', per); rect.setAttribute('stroke-dashoffset', (per * (1 - draw)).toFixed(1));
+    grid.setAttribute('opacity', (0.45 * draw).toFixed(3));
+    g.setAttribute('transform', `rotate(${rot.toFixed(2)} ${cx} ${cy}) translate(${cx} ${cy}) scale(${(1 - 0.08 * rot / 45).toFixed(3)}) translate(${-cx} ${-cy})`);
+    svg.style.opacity = fade.toFixed(3);
+    const gs = (c * 0.62) / f, R = rot * Math.PI / 180, sc0 = 1 - 0.08 * rot / 45;
+    q._chs.forEach((ch, i) => {
+      const row = Math.floor(i / 4), col = i % 4;
+      let x0 = -S / 2 + c * (col + 0.5), y0 = -S / 2 + c * (row + 0.5);
+      [x0, y0] = [(x0 * Math.cos(R) - y0 * Math.sin(R)) * sc0 + cx, (x0 * Math.sin(R) + y0 * Math.cos(R)) * sc0 + cy];
+      const x1 = cx + (i - (n - 1) / 2) * f * 1.06, y1 = cy;
+      const pin = smooth(clamp((t - 0.15 - i * 0.05) / 0.5)), s = 1.7 + i * 0.14, p = smooth(clamp((t - s) / 0.8));
+      // 弧を描いて飛ぶ（途中で上へふくらむ）
+      const mx = (x0 + x1) / 2 + (i % 2 ? 1 : -1) * S * 0.15, my = Math.min(y0, y1) - S * 0.55;
+      const x = (1 - p) * (1 - p) * x0 + 2 * (1 - p) * p * mx + p * p * x1, y = (1 - p) * (1 - p) * y0 + 2 * (1 - p) * p * my + p * p * y1;
+      const flap = reduce ? 0 : Math.sin(p * Math.PI) * 25 * (i % 2 ? 1 : -1) + Math.sin(p * Math.PI * 4) * 6 * Math.sin(p * Math.PI);
+      const sc = lerp(gs, 1, p), rotc = lerp(rot, 0, p) + flap, blur = reduce ? 0 : (1 - pin) * 6;
+      ch.style.opacity = pin.toFixed(3); ch.style.filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : 'none';
+      ch.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-50%) rotate(${rotc.toFixed(1)}deg) scale(${sc.toFixed(3)})`;
+    });
+  },
+};
+const DIM_MAX = 0.16; // 背景を暗くする強さ（墨色を重ねる濃さ。仮の値）
+function renderSeqs(u){
+  let dim = 0;
+  SEQS.forEach(q => {
+    const ok = q.dataset.need ? done(+q.dataset.need) : true;
+    const [a0, a1] = q.dataset.in.split(',').map(Number), [d0, d1] = q.dataset.out.split(',').map(Number);
+    const pin = ok ? smooth(beat(u, [a0, a1])) : 0, pout = smooth(beat(u, [d0, d1])), on = pin > 0 && pout < 1;
+    q.style.visibility = on ? 'visible' : 'hidden';
+    if (!on){ q._t0 = 0; q._pp = 0; return; }
+    if (!q._t0) q._t0 = performance.now(); // その場面に入るたびに、最初から
+    const t = (performance.now() - q._t0) / 1000;
+    // 場面を出るときは、全体がかすみながら立ちのぼって消える
+    q.style.opacity = (pin * (1 - pout)).toFixed(3);
+    q.style.filter = pout > 0.01 && !reduce ? `blur(${(pout * 8).toFixed(2)}px)` : 'none';
+    q.style.transform = `translateY(${(-pout * 30).toFixed(1)}px)`;
+    SEQFX[q.dataset.fx](q, t, u);
+    // 背景を少しだけ暗くする：「山折と〜」と「正方形が、命を持つまで」は場面のあいだずっと、「重ねるほど、強く」は横一列に並んでいるあいだだけ
+    if (q.dataset.fx === 'lines') dim = Math.max(dim, pin * (1 - pout));
+    if (q.dataset.fx === 'shot') dim = Math.max(dim, (q._pp || 0) * (1 - pout));
+    if (q.dataset.fx === 'square') dim = Math.max(dim, pin * (1 - pout)); // 「正方形が、命を持つまで」は、場面のあいだずっと
+  });
+  $('#dim').style.opacity = (DIM_MAX * dim).toFixed(3);
+}
+
+/* ------------------------------------------------------------------
+   背景の文様：場面ごとに淡く重ね、カメラの動きに合わせて、回る・寄る・ずれる（立体には傾けない）
+   ------------------------------------------------------------------ */
+const INKL = 'rgba(43,37,35,A)', GOLDL = 'rgba(176,138,58,A)';
+function patAsanoha(a){ // 麻の葉：正三角形の格子の辺と、各三角形の中心から頂点への線
+  const h2 = a * Math.sqrt(3) / 2, rows = [0, 1, 2].map(j => [-1, 0, 1, 2].map(i => [i * a + (j % 2 ? a / 2 : 0), j * h2]));
+  let d = '';
+  const tri = (p, q, r) => { const c = [(p[0] + q[0] + r[0]) / 3, (p[1] + q[1] + r[1]) / 3];
+    d += `M${p} L${q} L${r} Z M${c} L${p} M${c} L${q} M${c} L${r} `; };
+  for (let j = 0; j < 2; j++){ const A = rows[j], B = rows[j + 1];
+    for (let i = 0; i < A.length - 1; i++){ const xm = (A[i][0] + A[i + 1][0]) / 2, r = B.find(p => Math.abs(p[0] - xm) < 1e-6); if (r) tri(A[i], A[i + 1], r); }
+    for (let i = 0; i < B.length - 1; i++){ const xm = (B[i][0] + B[i + 1][0]) / 2, r = A.find(p => Math.abs(p[0] - xm) < 1e-6); if (r) tri(B[i], B[i + 1], r); } }
+  return { w: a, h: 2 * h2, body: `<path d="${d}" fill="none" stroke="${INKL.replace('A', '.16')}" stroke-width="1"/>` };
+}
+function patIchimatsu(s){ return { w: 2 * s, h: 2 * s, body: `<rect width="${s}" height="${s}" fill="${INKL.replace('A', '.055')}"/><rect x="${s}" y="${s}" width="${s}" height="${s}" fill="${INKL.replace('A', '.055')}"/><path d="M0 0 H${2 * s} M0 ${s} H${2 * s} M0 0 V${2 * s} M${s} 0 V${2 * s}" stroke="${INKL.replace('A', '.06')}" stroke-width="1"/>` }; }
+function patShoji(w, h){ return { w, h, body: `<rect width="${w}" height="${h}" fill="rgba(255,252,244,.0)"/><rect x="0" y="0" width="7" height="${h}" fill="${INKL.replace('A', '.09')}"/><rect x="0" y="0" width="${w}" height="5" fill="${INKL.replace('A', '.09')}"/><rect x="0" y="${h / 2}" width="${w}" height="4" fill="${INKL.replace('A', '.07')}"/>` }; }
+function patSeigaiha(r){ // 青海波：重なる同心円の半円を、段ごとに半分ずらして並べる
+  let s = '';
+  for (let row = -1; row <= 3; row++) for (let k = -1; k <= 2; k++){ const cx = k * 2 * r + (row % 2 ? r : 0), cy = row * r / 2;
+    s += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#F1EBE2"/>`; [1, .75, .5, .25].forEach(f => s += `<circle cx="${cx}" cy="${cy}" r="${r * f}" fill="none" stroke="${INKL.replace('A', '.15')}" stroke-width="1.2"/>`); }
+  return { w: 2 * r, h: r, body: s };
+}
+function patCloud(){ return { w: 220, h: 130, body: `<path d="M20 90 q10 -26 34 -20 q6 -26 34 -22 q20 -16 40 4 q26 -6 30 18 q22 4 18 20 Z" fill="none" stroke="${GOLDL.replace('A', '.28')}" stroke-width="1.4"/><path d="M130 40 q8 -16 26 -12 q16 -10 28 6" fill="none" stroke="${GOLDL.replace('A', '.22')}" stroke-width="1.2"/>` }; }
+function fiberTile(){ // 和紙の繊維：つなぎ目が出ないよう、上下左右にずらした位置にも同じ繊維を描く
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d'); let s = 9; const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  x.lineCap = 'round';
+  for (let i = 0; i < 900; i++){ const px = r() * S, py = r() * S, len = 20 + r() * 90, a = r() * 6.28, b = (r() - .5) * .9, col = `rgba(120,95,70,${(0.05 + r() * 0.12).toFixed(2)})`, lw = 0.6 + r() * 1.6;
+    for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]){ x.strokeStyle = col; x.lineWidth = lw; x.beginPath(); x.moveTo(px + ox, py + oy); x.quadraticCurveTo(px + ox + Math.cos(a + b) * len * .5, py + oy + Math.sin(a + b) * len * .5, px + ox + Math.cos(a) * len, py + oy + Math.sin(a) * len); x.stroke(); } }
+  return { w: 512, h: 512, body: `<image href="${c.toDataURL()}" width="512" height="512"/>` };
+}
+// 場面ごとの文様：[出始め, 出きる, 消え始め, 消えきる]（u）
+const PATTERNS = [
+  { id: 'ichimatsu', make: () => patIchimatsu(54), win: [-1, -1, 0.085, 0.12] },  // 制約の美学：正方形の並び
+  { id: 'asanoha', make: () => patAsanoha(96), win: [0.10, 0.14, 0.235, 0.27] },   // 数学的な調和：麻の葉
+  { id: 'shoji', make: () => patShoji(150, 210), win: [0.245, 0.28, 0.37, 0.41], blur: 3, drift: 1 }, // 光と影：障子の格子の影
+  { id: 'fiber', make: fiberTile, win: [0.42, 0.46, 0.575, 0.61] },               // 素材の質感：和紙の繊維
+  { id: 'seigaiha', make: () => patSeigaiha(46), win: [0.60, 0.65, 0.85, 0.89] },   // プロセス：青海波
+  { id: 'cloud', make: patCloud, win: [0.86, 0.91, 2, 2] },                         // 千羽鶴：雲
+];
+const bgEl = $('#bg');
+PATTERNS.forEach(P => {
+  const t = P.make();
+  P.el = document.createElement('div'); P.el.className = 'patLayer';
+  P.el.innerHTML = `<svg width="100%" height="100%" aria-hidden="true"><defs><pattern id="pt_${P.id}" patternUnits="userSpaceOnUse" width="${t.w}" height="${t.h}">${t.body}</pattern>
+    <pattern id="ptf_${P.id}" patternUnits="userSpaceOnUse" width="${t.w}" height="${t.h}" patternTransform="scale(1.9)">${t.body}</pattern></defs>
+    <g class="far"><rect x="-3000" y="-3000" width="6000" height="6000" fill="url(#ptf_${P.id})" opacity=".45"/></g>
+    <g class="near"><rect x="-3000" y="-3000" width="6000" height="6000" fill="url(#pt_${P.id})"/></g></svg>`;
+  bgEl.appendChild(P.el); P.near = P.el.querySelector('.near'); P.far = P.el.querySelector('.far');
+});
+// 文様の動き：常にゆっくり流れ続け、角度は紙とそろえる（立体には傾けない）
+//   紙の場面（四角い形まで）：紙を回す角度（yaw）だけ文様も回し、紙を斜めに見下ろす角度（tilt）だけ縦につぶす
+//   鶴の場面：鶴が回る角度（cyaw）に合わせて、文様を横へ流す
+//   流れる速さ（手前 9px/秒・奥 4px/秒）は仮の値
+let LAST_ST = null;
+function renderPatterns(u, st){
+  st = st || LAST_ST; if (!st) return; LAST_ST = st;
+  const crane = st.craneOpacity > 0.5, t = (performance.now() - LOADED) / 1000;
+  const rot = crane ? 0 : -(st.yaw || 0) * 57.2958;
+  const squash = crane ? Math.max(0.55, Math.cos(st.ctilt || 0)) : Math.max(0.45, Math.abs(Math.cos(st.tilt || 0)));
+  const pan = crane ? (st.cyaw || 0) * 220 : 0, zoom = st.zoom || 1;
+  PATTERNS.forEach(P => {
+    const [a0, a1, d0, d1] = P.win;
+    const pin = a0 < 0 ? clamp((performance.now() - LOADED) / 2200) : smooth(beat(u, [a0, a1])), pout = smooth(beat(u, [d0, d1])), o = pin * (1 - pout);
+    if (o <= 0.002){ if (P.el.style.opacity !== '0') P.el.style.opacity = 0; return; }
+    P.el.style.opacity = o.toFixed(3);
+    const blur = reduce ? 0 : (1 - pin) * 6 + pout * 8 + (P.blur || 0);
+    P.el.style.filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : 'none';
+    const cx = W / 2, cy = H / 2, flowN = reduce ? 0 : t * 9, flowF = reduce ? 0 : t * 4;
+    const sN = 1 + (zoom - 1) * 0.10, sF = 1 + (zoom - 1) * 0.04;
+    P.near.setAttribute('transform', `translate(${cx} ${cy}) scale(${sN.toFixed(4)} ${(sN * squash).toFixed(4)}) rotate(${rot.toFixed(2)}) translate(${(-cx + flowN - pan).toFixed(1)} ${(-cy + flowN * 0.5).toFixed(1)})`);
+    P.far.setAttribute('transform', `translate(${cx} ${cy}) scale(${sF.toFixed(4)} ${(sF * squash).toFixed(4)}) rotate(${(rot * 0.6).toFixed(2)}) translate(${(-cx + flowF - pan * 0.4).toFixed(1)} ${(-cy + flowF * 0.5).toFixed(1)})`);
+  });
+}
+// 文様だけは、スクロールしていないときも常に描き直す（紙や鶴は描き直さないので軽い）
+(function bgLoop(){ if (TEXURL){ renderPatterns(uS, null); renderVapors(uS); renderSeqs(uS); } requestAnimationFrame(bgLoop); })();
+
+/* ------------------------------------------------------------------
+   流れ：スクロールとタップ
+   ------------------------------------------------------------------ */
+let uT = 0, uS = 0, NOW = performance.now(), looping = false, lastT = 0;
+const taps = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, MS = { 1: CFG.FOLD_MS, 2: CFG.COLLAPSE_MS, 3: CFG.PETAL_MS, 4: CFG.HEAD_MS, 5: CFG.WING_MS }, GATE = { 1: CFG.G1, 2: CFG.G2, 3: CFG.G3, 4: CFG.GH, 5: CFG.G4 };
+const rel = (t0, ms) => t0 ? clamp((NOW - t0) / (reduce ? 300 : ms)) : 0;
+const done = k => taps[k] && rel(taps[k], MS[k]) >= 1;
+// 折った工程の進み：初めて折るときはタップからの時間で、一度折ったあとはスクロールの位置で決まる（上へ戻ると、さかのぼって開く）
+function prog(k, u){
+  if (!taps[k]) return 0;
+  const r = rel(taps[k], MS[k]);
+  if (r < 1) return easeInOut(r);
+  return u >= GATE[k] ? 1 : easeInOut(beat(u, [GATE[k] - CFG.BACK_RANGE, GATE[k]]));
+}
+function keyAt(K, u, keys){
+  let a = K[0], b = K[K.length - 1];
+  for (let i = 1; i < K.length; i++){ if (u <= K[i].u){ a = K[i - 1]; b = K[i]; break; } }
+  const t = b.u > a.u ? smooth(clamp((u - a.u) / (b.u - a.u))) : 1, o = {};
+  keys.forEach(k => o[k] = lerp(a[k] || 0, b[k] || 0, t));
+  return o;
+}
+// 鶴の形の大きさ：寄りの場面（カメラの寄る大きさが1.4〜1.9）にかけて、「鶴全体を横幅に収める」制限を少しずつ外す（つなぎ目で大きさが飛ばないように）
+function craneZoom(c2, p5){
+  const z = c2.zoom * 1.25 * (1 + 0.25 * Math.sin(Math.PI * p5)), cap = (W * 0.92) / (2.4 * SCALE), w = smooth(clamp((c2.zoom - 1.4) / 0.5));
+  return lerp(Math.min(z, cap), z, w);
+}
+function stateAt(u){
+  const p1 = prog(1, u), p2 = prog(2, u), p3 = prog(3, u), ph = prog(4, u), p5 = prog(5, u);
+  const KEYS = ['zoom', 'fx', 'fy', 'tilt', 'yaw'];
+  const cam = keyAt(CFG.CAM, u, KEYS), pre = keyAt(CFG.CAM, CFG.G2, KEYS); // pre：四角に整える直前のカメラ
+  const st = { baseOpacity: 1, craneOpacity: 0, tilt: cam.tilt, yaw: cam.yaw, center: 0.46, zoom: cam.zoom, focus: [cam.fx, cam.fy, 0], guide: 0, edges: 0, creaseMade: {} };
+  if (p2 <= 0){
+    const q = done(1) ? smooth(beat(u, CFG.UNFOLD)) : 0;
+    st.pts3 = triPoints(Math.PI * p1 * (1 - q));
+    if (done(1) || p1 > 0.98){ st.creaseMade[0] = 1; st.creaseMade[4] = 1; }
+    st.guide = done(1) ? clamp(beat(u, CFG.GUIDE)) : 0; st.guideFly = true; // 8本が画面の外から飛び込む（1本ずつずらすのは描くときに）
+    const swing = Math.sin(Math.PI * p1) * (1 - q);
+    st.tilt += 0.55 * swing; st.yaw += -0.35 * swing; st.zoom *= 1 + 0.35 * swing; st.focus[1] += -0.25 * swing;
+  } else {
+    const e = p2;
+    st.pts3 = basePoints(lerp(Math.PI / 2, 0.07, e));
+    st.guide = 1 - e; st.edges = e;
+    const orbitAt = v => smooth(beat(v, CFG.ORBIT)) * 1.6;
+    // 直前のカメラから途切れずに続け、そのあとのスクロールの変化は「整えた瞬間からの差」として足す
+    let tilt = lerp(pre.tilt, 1.05, e) + Math.sin(Math.PI * e) * 0.25 + (cam.tilt - pre.tilt);
+    let yaw = lerp(pre.yaw, -Math.PI / 4, e) + orbitAt(u) + (cam.yaw - pre.yaw);
+    let zoom = lerp(pre.zoom, 1.55, e) * (1 + 0.5 * Math.sin(Math.PI * e)) * (cam.zoom / pre.zoom);
+    st.center = lerp(0.46, 0.40, e);
+    // 手前の稜線に寄る（寄る度合いは cam.fx）
+    let best = [0, 0, 0], ws = 0;
+    st.pts3.forEach((p, i) => { if (RAYS[i].diag) return; const v = view(p, tilt, yaw), wt = Math.exp(6 * v[2]); best = best.map((c, j) => c + p[j] * wt); ws += wt; });
+    best = best.map(c => c / ws); { const l = Math.hypot(...best) || 1; best = best.map(c => c / l); } // 手前にある稜線ほど重く混ぜ、長さ1にそろえる
+    const w = clamp(cam.fx) * e;
+    let focus = [lerp(0, best[0] * 0.6, w), lerp(0, best[1] * 0.6, w), lerp(-0.5 * e, best[2] * 0.6, w)];
+    // 鶴の基本形へ切り替える前に、四角い形を真横から見る向きへ回しておく
+    //   この向き（角が下・閉じた側が上）・大きさ・位置で、鶴の基本形の最初の形とぴったり重なる
+    const k = smooth(beat(u, CFG.ALIGN));
+    if (k > 0){
+      const step = Math.PI / 2, yawEnd = -Math.PI / 4 + orbitAt(CFG.ALIGN[1]) + (keyAt(CFG.CAM, CFG.ALIGN[1], KEYS).yaw - pre.yaw);
+      const target = -Math.PI / 4 + Math.round((yawEnd + Math.PI / 4) / step) * step;
+      const z0 = craneZoom(keyAt(CFG.CAM2, CFG.G3, ['zoom']), 0);
+      tilt = lerp(tilt, -Math.PI / 2, k); yaw = lerp(yaw, target, k); zoom = lerp(zoom, z0, k);
+      focus = [lerp(focus[0], 0, k), lerp(focus[1], 0, k), lerp(focus[2], -R2 / 2, k)];
+    }
+    st.tilt = tilt; st.yaw = yaw; st.zoom = zoom; st.focus = focus;
+  }
+  // 鶴の基本形から先：重ねて切り替える間は、どちらも同じ形・同じ向きのまま。切り替え終えてから動き出す
+  if (p3 > 0){
+    const fade = smooth(clamp(p3 / 0.18)), g3 = clamp((p3 - 0.18) / 0.82);
+    st.baseOpacity = 1 - fade; st.craneOpacity = fade;
+    const c2 = keyAt(CFG.CAM2, u, ['zoom', 'tilt', 'yaw', 'fy', 'fx', 'hw']);
+    st.p3 = easeInOut(g3); st.narrow = smooth(beat(u, CFG.NARROW)); st.rev = smooth(beat(u, CFG.REVERSE)); st.head = ph; st.wing = p5;
+    st.ctilt = c2.tilt + Math.sin(Math.PI * g3) * 0.35 + Math.sin(Math.PI * p5) * 0.25; st.cyaw = c2.yaw + Math.sin(Math.PI * g3) * 0.6;
+    st.cfy = c2.fy; st.cfx = c2.fx; st.hw = c2.hw;
+    st.zoom = craneZoom(c2, p5);
+    st.center = lerp(0.40, 0.48, smooth(g3));
+    const fly = easeInOut(beat(u, CFG.FLY));
+    st.flyAway = fly; st.lift = [fly * 0.6, fly * 1.6 + p5 * 0.12, -fly * 0.5]; st.craneScale = lerp(1, 0.32, fly);
+  }
+  st.flock = beat(u, CFG.FLOCK);
+  return st;
+}
+function gateAt(){ for (let k = 1; k <= 5; k++) if (!done(k)) return { k, u: GATE[k] }; return null; }
+function frame(){
+  if (!TEXURL) return;
+  const st = stateAt(uS), R = render(st);
+  renderFlock(st.flock);
+  const g = gateAt(), atG = g && uS >= g.u - 0.004 && !taps[g.k];
+  let tx = W / 2, ty = H * 0.46;
+  if (g && R){
+    if (g.k === 1 && R.V){ [tx, ty] = R.s(R.V[6]); ty -= 40; }
+    else if (g.k === 2 && R.O){ [tx, ty] = R.s(R.O); }
+    else if (g.k === 3 && R.O){ [tx, ty] = R.s(R.O); }
+    else if (g.k === 4 && R.headScreen){ [tx, ty] = R.headScreen; }
+    else if (g.k === 5 && R.craneCenter){ [tx, ty] = R.craneCenter; }
+  }
+  if (atG){ tapBtn.style.left = tx.toFixed(1) + 'px'; tapBtn.style.top = ty.toFixed(1) + 'px'; }
+  tapBtn.classList.toggle('on', !!atG);
+  // 「Scroll」：最初と、タップした工程を折り終えて、まだスクロールしていないとき
+  let need = uT < 0.005;
+  for (let k = 1; k <= 5; k++) if (done(k) && Math.abs(uT - GATE[k]) < 0.01) need = true;
+  hint.classList.toggle('gone', !need);
+  renderVapors(uS);
+  renderPatterns(uS, st);
+}
+const animating = () => (NOW - LOADED < 2600) || [1, 2, 3, 4, 5].some(k => taps[k] && rel(taps[k], MS[k]) < 1) || (uS > CFG.FLOCK[0] && !reduce);
+function loop(now){
+  NOW = now; const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  uS = reduce ? uT : uS + (uT - uS) * (1 - Math.exp(-CFG.SMOOTH * dt)); if (Math.abs(uT - uS) < 0.0004) uS = uT;
+  frame();
+  if (uS !== uT || animating()) requestAnimationFrame(loop); else looping = false;
+}
+function kick(){ if (!looping){ looping = true; lastT = performance.now(); requestAnimationFrame(loop); } }
+// 場面ごとのスクロールの量：[始め, 終わり, 何倍にするか]（u の範囲）。言葉をゆっくり読ませたい場面だけ伸ばす（倍率は仮の値）
+const STRETCH = [[0.13, 0.23, 3.0], [0.27, 0.385, 3.0], [0.46, 0.60, 2.4], [0.775, 0.89, 3.0]]; // 点線が集まる・山折と〜・重ねるほど、強く・正方形が、命を持つまで
+const SLEN = 1 + STRETCH.reduce((a, [s0, e0, m]) => a + (e0 - s0) * (m - 1), 0);
+function rawToU(r){ const x = r * SLEN; let uu = 0, xx = 0;
+  for (const [s0, e0, m] of STRETCH){ if (x <= xx + (s0 - uu)) return uu + (x - xx); xx += s0 - uu; uu = s0; if (x <= xx + (e0 - s0) * m) return s0 + (x - xx) / m; xx += (e0 - s0) * m; uu = e0; }
+  return uu + (x - xx); }
+function uToRaw(v){ let uu = 0, xx = 0;
+  for (const [s0, e0, m] of STRETCH){ if (v <= s0) return (xx + (v - uu)) / SLEN; xx += s0 - uu; uu = s0; if (v <= e0) return (xx + (v - s0) * m) / SLEN; xx += (e0 - s0) * m; uu = e0; }
+  return (xx + (v - uu)) / SLEN; }
+// ページ全体のスクロールの量：場面の進みをゆっくりにするため、もとの 1300svh の約2.3倍（3000svh）にする（仮の値）
+const JOURNEY_SVH = 4000; // 3000 → 4000（もっとゆっくりに。仮の値）
+journey.style.height = (JOURNEY_SVH * SLEN).toFixed(1) + 'svh';
+const total = () => Math.max(1, journey.offsetHeight - innerHeight);
+const toU = () => rawToU(clamp(-journey.getBoundingClientRect().top / total()));
+const toY = u => journey.offsetTop + uToRaw(u) * total();
+// タップを待つ位置より先へは進めない（上へは戻れる）
+addEventListener('scroll', () => { uT = toU(); const g = gateAt(); if (g && uT > g.u + 0.002){ uT = g.u; scrollTo(0, toY(g.u)); } kick(); }, { passive: true });
+const atGate = () => { const g = gateAt(); return g && uT >= g.u - 0.003; };
+addEventListener('wheel', e => { if (e.deltaY > 0 && atGate()) e.preventDefault(); }, { passive: false });
+let touchY = null;
+addEventListener('touchstart', e => { touchY = e.touches[0].clientY; }, { passive: true });
+addEventListener('touchmove', e => { if (touchY !== null && e.touches[0].clientY < touchY && atGate()) e.preventDefault(); }, { passive: false });
+tapBtn.addEventListener('click', () => { const g = gateAt(); if (g && !taps[g.k]) taps[g.k] = performance.now(); tapBtn.classList.remove('on'); kick(); });
+
+function layout(){
+  W = stage.clientWidth; H = stage.clientHeight;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  SCALE = Math.min(W * 0.86, H * 0.52) / (2 * R2);
+  uT = toU(); uS = uT; NOW = performance.now(); frame();
+  sizeVapors(); sizeSeqs();
+  kick(); // 開いた直後の言葉と文様は時間で現れるので、描き直しを始めておく
+}
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+scrollTo(0, 0);
+buildScene();
+countCrane();
+// 紙は、和紙の模様を貼らず、光と影の明暗の層と折り目の線だけで見せる（半透明の紙に見える。Claudeで直接開いたときの見え方に合わせた）
+TEXURL = { front: '', back: '', plain: '' };
+layout();
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (TEXURL) layout(); }, 150); });
+})();
+</script>
+</body>
+</html>
